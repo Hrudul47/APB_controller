@@ -1,0 +1,121 @@
+
+`timescale 1ns/1ps
+
+module tb_top_system;
+
+    localparam ADDR_WIDTH = 32;
+    localparam DATA_WIDTH = 32;
+    localparam CLK_PERIOD = 10;
+
+    reg                   clk;
+    reg                   rst_n;
+
+    reg                   wr_req_i;
+    reg [ADDR_WIDTH-1:0]  wr_addr_i;
+    reg [DATA_WIDTH-1:0]  wr_data_i;
+
+    reg                   rd_req_i;
+    reg [ADDR_WIDTH-1:0]  rd_addr_i;
+
+    wire [DATA_WIDTH-1:0] rd_data_o;
+    wire                  rd_valid_o;
+    
+    integer i;
+
+    top_system #(
+        .ADDR_WIDTH(ADDR_WIDTH),
+        .DATA_WIDTH(DATA_WIDTH)
+    ) dut (
+        .clk(clk),
+        .rst_n(rst_n),
+        .wr_req_i(wr_req_i),
+        .wr_addr_i(wr_addr_i),
+        .wr_data_i(wr_data_i),
+        .rd_req_i(rd_req_i),
+        .rd_addr_i(rd_addr_i),
+        .rd_data_o(rd_data_o),
+        .rd_valid_o(rd_valid_o)
+    );
+
+    initial begin
+        clk = 0;
+        forever #(CLK_PERIOD/2) clk = ~clk;
+    end
+
+    initial begin
+        $display("Starting Testbench...");
+        rst_n = 1'b0;
+        wr_req_i = 1'b0;
+        rd_req_i = 1'b0;
+        wr_addr_i = 0;
+        wr_data_i = 0;
+        rd_addr_i = 0;
+        repeat(5) @(posedge clk);
+        rst_n = 1'b1;
+        @(posedge clk);
+
+        $display("Test 1: Simple Write then Read");
+        wr_req_i <= 1'b1;
+        wr_addr_i <= 32'h10;
+        wr_data_i <= 32'hDEADBEEF;
+        @(posedge clk);
+        wr_req_i <= 1'b0;
+        
+        repeat(5) @(posedge clk);
+
+        rd_req_i <= 1'b1;
+        rd_addr_i <= 32'h10;
+        @(posedge clk);
+        rd_req_i <= 1'b0;
+        
+        wait (rd_valid_o);
+        $display("Read data: 0x%h", rd_data_o);
+        if(rd_data_o == 32'hDEADBEEF) $display("Test 1 Passed!");
+        else $display("ERROR: Test 1 Failed!");
+        @(posedge clk);
+
+        $display("\nTest 2: Write Priority Test");
+        wr_req_i <= 1'b1;
+        wr_addr_i <= 32'h20;
+        wr_data_i <= 32'hC0FFEE;
+        rd_req_i <= 1'b1;
+        rd_addr_i <= 32'h10;
+        @(posedge clk);
+        wr_req_i <= 1'b0;
+        rd_req_i <= 1'b0;
+        
+        wait (rd_valid_o);
+        $display("First transaction completed. Reading data from 0x10: 0x%h", rd_data_o);
+        if(rd_data_o == 32'hDEADBEEF) $display("Read correct value for first transaction.");
+        else $display("ERROR: Read incorrect value for first transaction.");
+        @(posedge clk);
+
+        rd_req_i <= 1'b1;
+        rd_addr_i <= 32'h20;
+        @(posedge clk);
+        rd_req_i <= 1'b0;
+
+        wait (rd_valid_o);
+        $display("Reading data from 0x20: 0x%h", rd_data_o);
+        if(rd_data_o == 32'hC0FFEE) $display("Test 2 Passed!");
+        else $display("ERROR: Test 2 Failed!");
+        @(posedge clk);
+
+        $display("\nTest 3: FIFO Buffering Test");
+        for(i=0; i<4; i=i+1) begin
+            wr_req_i <= 1'b1;
+            wr_addr_i <= 32'hA0 + i*4;
+            wr_data_i <= $random;
+            @(posedge clk);
+        end
+        wr_req_i <= 1'b0;
+
+        $display("Fired 4 writes. Waiting for system to process...");
+        repeat(20) @(posedge clk);
+        $display("Test 3 Finished.");
+
+        $display("\nAll tests complete.");
+        $finish;
+    end
+
+endmodule
