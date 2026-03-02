@@ -1,0 +1,73 @@
+module top_system #(
+    parameter ADDR_WIDTH = 32,
+    parameter DATA_WIDTH = 32,
+    parameter FIFO_DEPTH = 16
+)(
+    input clk,
+    input rst_n,
+
+    input wr_req_i,
+    input [ADDR_WIDTH-1:0] wr_addr_i,
+    input [DATA_WIDTH-1:0] wr_data_i,
+
+    input rd_req_i,
+    input [ADDR_WIDTH-1:0] rd_addr_i,
+
+    output [DATA_WIDTH-1:0] rd_data_o,
+    output rd_valid_o
+);
+
+localparam FIFO_WIDTH = ADDR_WIDTH + DATA_WIDTH + 1;
+
+wire arb_valid, arb_write;
+wire [ADDR_WIDTH-1:0] arb_addr;
+wire [DATA_WIDTH-1:0] arb_data;
+
+wire fifo_full, fifo_empty;
+wire [FIFO_WIDTH-1:0] fifo_out;
+wire fifo_rd_en;
+
+wire [ADDR_WIDTH-1:0] PADDR;
+wire PSEL, PENABLE, PWRITE;
+wire [DATA_WIDTH-1:0] PWDATA, PRDATA;
+wire PREADY;
+
+arbiter #(.ADDR_WIDTH(ADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH)) u_arb(
+    .clk(clk), .rst_n(rst_n),
+    .wr_req_i(wr_req_i), .wr_addr_i(wr_addr_i), .wr_data_i(wr_data_i),
+    .rd_req_i(rd_req_i), .rd_addr_i(rd_addr_i),
+    .req_valid_o(arb_valid), .req_is_write_o(arb_write),
+    .req_addr_o(arb_addr), .req_data_o(arb_data),
+    .fifo_full_i(fifo_full)
+);
+
+fifo #(.DATA_WIDTH(FIFO_WIDTH), .DEPTH(FIFO_DEPTH)) u_fifo(
+    .clk(clk), .rst_n(rst_n),
+    .wr_en_i(arb_valid),
+    .data_i({arb_write,arb_addr,arb_data}),
+    .rd_en_i(fifo_rd_en),
+    .data_o(fifo_out),
+    .full_o(fifo_full),
+    .empty_o(fifo_empty)
+);
+
+apb_master u_master(
+    .clk(clk), .rst_n(rst_n),
+    .fifo_rd_en_o(fifo_rd_en),
+    .fifo_data_i(fifo_out),
+    .fifo_empty_i(fifo_empty),
+    .PADDR(PADDR), .PSEL(PSEL), .PENABLE(PENABLE),
+    .PWRITE(PWRITE), .PWDATA(PWDATA),
+    .PRDATA(PRDATA), .PREADY(PREADY)
+);
+
+apb_slave_mem u_slave(
+    .clk(clk), .rst_n(rst_n),
+    .PADDR(PADDR), .PSEL(PSEL), .PENABLE(PENABLE),
+    .PWRITE(PWRITE), .PWDATA(PWDATA),
+    .PRDATA(PRDATA), .PREADY(PREADY),
+    .rd_data_o(rd_data_o),
+    .rd_valid_o(rd_valid_o)
+);
+
+endmodule
