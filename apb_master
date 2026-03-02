@@ -1,0 +1,77 @@
+module apb_master #(
+    parameter ADDR_WIDTH = 32,
+    parameter DATA_WIDTH = 32
+)(
+    input clk,
+    input rst_n,
+
+    output reg fifo_rd_en_o,
+    input [ADDR_WIDTH+DATA_WIDTH:0] fifo_data_i,
+    input fifo_empty_i,
+
+    output reg [ADDR_WIDTH-1:0] PADDR,
+    output reg PSEL,
+    output reg PENABLE,
+    output reg PWRITE,
+    output reg [DATA_WIDTH-1:0] PWDATA,
+    input [DATA_WIDTH-1:0] PRDATA,
+    input PREADY
+);
+
+localparam IDLE=0, SETUP=1, ACCESS=2;
+
+reg [1:0] state, next_state;
+reg [ADDR_WIDTH-1:0] addr_reg;
+reg [DATA_WIDTH-1:0] data_reg;
+reg write_reg;
+
+always @(*) begin
+    next_state = state;
+    PSEL = 0;
+    PENABLE = 0;
+    fifo_rd_en_o = 0;
+
+    PADDR = addr_reg;
+    PWDATA = data_reg;
+    PWRITE = write_reg;
+
+    case(state)
+        IDLE: begin
+            if (!fifo_empty_i) begin
+                fifo_rd_en_o = 1;
+                next_state = SETUP;
+            end
+        end
+
+        SETUP: begin
+            PSEL = 1;
+            next_state = ACCESS;
+        end
+
+        ACCESS: begin
+            PSEL = 1;
+            PENABLE = 1;
+            if (PREADY)
+                next_state = IDLE;
+        end
+    endcase
+end
+
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        state <= IDLE;
+        addr_reg <= 0;
+        data_reg <= 0;
+        write_reg <= 0;
+    end else begin
+        state <= next_state;
+
+        if (state == IDLE && !fifo_empty_i) begin
+            write_reg <= fifo_data_i[ADDR_WIDTH+DATA_WIDTH];
+            addr_reg  <= fifo_data_i[ADDR_WIDTH+DATA_WIDTH-1:DATA_WIDTH];
+            data_reg  <= fifo_data_i[DATA_WIDTH-1:0];
+        end
+    end
+end
+
+endmodule
